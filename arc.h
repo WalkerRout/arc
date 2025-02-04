@@ -124,7 +124,7 @@ void arc_free(void *arc_data, void(*destructor)(void *)) {
   size_t prev = atomic_fetch_sub_explicit(&header->strong_count, 1, memory_order_release);
   // are we the last (strong) survivor?
   if (prev == 1) {
-    // but first, as per 7.17.4:
+    // but first, as per C11 7.17.4:
     // "An atomic operation A that is a release operation on an atomic 
     // object M synchronizes with an acquire fence B if there exists some 
     // atomic operation X on M such that X is sequenced before B and reads 
@@ -147,12 +147,29 @@ void arc_free(void *arc_data, void(*destructor)(void *)) {
 
 void *arc_clone(void *arc_data) {
   arc_header_t *header = __get_header(arc_data);
-  size_t prev = atomic_fetch_add_explicit(&header->strong_count, 1, memory_order_relaxed);
-  if (prev > __ARC_WEAK_MAX_REFS-1) {
-    errno = ETOOMANYREFS;
-    return NULL;
+  size_t snapshot = atomic_load_explicit(&header->strong_count, memory_order_relaxed);
+  for (;;) {
+    if (snapshot == 0) {
+      // we have nothing to upgrade into...
+      errno = ENOENT;
+      return NULL;
+    }
+    if (snapshot >= __ARC_WEAK_MAX_REFS) {
+      errno = ETOOMANYREFS;
+      return NULL;
+    }
+    // we dont really care when this operation completes, just that it does...
+    if (atomic_compare_exchange_weak_explicit(
+      &header->strong_count, 
+      &snapshot, snapshot + 1,
+      // we need to see if any decrements to 0 happened in between the load...
+      memory_order_acquire, 
+      memory_order_relaxed)
+    ) {
+      return arc_data;
+    }
+    // go again...
   }
-  return arc_data;
 }
 
 void *arc_downgrade(void *arc_data) {
@@ -171,11 +188,10 @@ void *arc_downgrade(void *arc_data) {
     // are we able to increment by 1?
     if (atomic_compare_exchange_weak_explicit(
       &header->weak_count,
-      &snapshot,
-      snapshot + 1,
+      &snapshot, snapshot + 1,
       memory_order_relaxed,
-      memory_order_relaxed
-    )) {
+      memory_order_relaxed)
+    ) {
       // yup, success, a new weak can access the memory now...
       void *weak_data = arc_data;
       return weak_data;
@@ -188,7 +204,7 @@ void weak_free(void *weak_data) {
   arc_header_t *header = __get_header(weak_data);
   // this part is cool; the weak manages the allocation, so we need to see
   // if there is a single weak survivor left (very likely the last arc_t)...
-  // we make this operation on other threads visible through release...
+  // we mark this operation as visible on other threads through release...
   size_t prev = atomic_fetch_sub_explicit(&header->weak_count, 1, memory_order_release);
   // are we the last survivor?
   if (prev == 1) {
@@ -204,12 +220,23 @@ void weak_free(void *weak_data) {
 
 void *weak_clone(void *weak_data) {
   arc_header_t *header = __get_header(weak_data);
-  size_t prev = atomic_fetch_add_explicit(&header->weak_count, 1, memory_order_relaxed);
-  if (prev > __ARC_WEAK_MAX_REFS-1) {
-    errno = ETOOMANYREFS;
-    return NULL;
+  size_t snapshot = atomic_load_explicit(&header->weak_count, memory_order_relaxed);
+  for (;;) {
+    // we only care about overflow, weaks can do whatever they want lol
+    if (snapshot > __ARC_WEAK_MAX_REFS-1) {
+      errno = ETOOMANYREFS;
+      return NULL;
+    }
+    if (atomic_compare_exchange_weak_explicit(
+      &header->weak_count, 
+      &snapshot, snapshot + 1,
+      memory_order_relaxed,
+      memory_order_relaxed)
+    ) {
+      return weak_data;
+    }
+    // AGAIN!
   }
-  return weak_data;
 }
 
 void *weak_upgrade(void *weak_data) {
@@ -217,8 +244,8 @@ void *weak_upgrade(void *weak_data) {
   // we must CAS in case strong_count changes... 
   size_t snapshot = atomic_load_explicit(&header->strong_count, memory_order_relaxed);
   for (;;) {
+    // this is strong count we're talkin about, we care when it hits 0...
     if (snapshot == 0) {
-      // we have nothing to upgrade into...
       errno = ENOENT;
       return NULL;
     }
@@ -230,19 +257,18 @@ void *weak_upgrade(void *weak_data) {
     // are we able to increment by 1?
     if (atomic_compare_exchange_weak_explicit(
       &header->strong_count,
-      &snapshot,
-      snapshot + 1,
+      &snapshot, snapshot + 1,
       // we acquire memory effects released by decrement... any thread that
       // successfully upgrades a weak can 'see' all writes made prior to
       // final drop of last strong...
       memory_order_acquire,
-      memory_order_relaxed
-    )) {
+      memory_order_relaxed)
+    ) {
       // yup, success, a new arc can access the memory now...
       void *arc_data = weak_data;
       return arc_data;
     }
-    // we go again...
+    // once more round the sun...
   }
 }
 
