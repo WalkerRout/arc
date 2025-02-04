@@ -98,7 +98,7 @@ static const size_t __ARC_WEAK_MAX_REFS = SIZE_MAX>>1;
 static arc_header_t *__get_header(void *data) {
   // cant use void pointers with arithmetic, so we cast to a single byte type
   // to express equivalent logic...
-  return (arc_header_t *)((char *) data - __ARC_HEADER_SIZE_WITH_PAD);
+  return (arc_header_t *)((uint8_t *) data - __ARC_HEADER_SIZE_WITH_PAD);
 }
 
 // then comes the public api...
@@ -114,7 +114,7 @@ void *arc_new(size_t nbytes) {
   arc_header_t *header = data;
   atomic_init(&header->strong_count, 1);
   atomic_init(&header->weak_count, 1);
-  return (char *) data + __ARC_HEADER_SIZE_WITH_PAD;
+  return (uint8_t *) data + __ARC_HEADER_SIZE_WITH_PAD;
 }
 
 void arc_free(void *arc_data, void(*destructor)(void *)) {
