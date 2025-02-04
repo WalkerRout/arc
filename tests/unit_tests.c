@@ -76,8 +76,8 @@ void test_arc() {
   int *shared_weak = arc_downgrade(shared_arc);
   ALWAYS_ASSERT(shared_weak != NULL);
 
-  validate_reference_counts(get_header(shared_arc), 1, 2);
-  validate_reference_counts(get_header(shared_weak), 1, 2);
+  validate_reference_counts(__get_header(shared_arc), 1, 2);
+  validate_reference_counts(__get_header(shared_weak), 1, 2);
 
   test_data_t data = {shared_arc, shared_weak};
   pthread_t threads[NUM_THREADS];
@@ -92,11 +92,11 @@ void test_arc() {
     pthread_join(threads[i], NULL);
   }
 
-  validate_reference_counts(get_header(shared_arc), 1, 2);
-  validate_reference_counts(get_header(shared_weak), 1, 2);
+  validate_reference_counts(__get_header(shared_arc), 1, 2);
+  validate_reference_counts(__get_header(shared_weak), 1, 2);
 
   weak_free(shared_weak);
-  validate_reference_counts(get_header(shared_arc), 1, 1);
+  validate_reference_counts(__get_header(shared_arc), 1, 1);
 
   arc_free(shared_arc, NULL);
 }

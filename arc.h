@@ -93,7 +93,9 @@ static const size_t __ARC_ALIGN_BITS = sizeof(uintptr_t)-1;
 static const size_t __ARC_HEADER_SIZE_WITH_PAD = \
   (sizeof(arc_header_t)+__ARC_ALIGN_BITS) & ~__ARC_ALIGN_BITS;
 
-static arc_header_t *get_header(void *data) {
+static const size_t __ARC_WEAK_MAX_REFS = SIZE_MAX>>1;
+
+static arc_header_t *__get_header(void *data) {
   // cant use void pointers with arithmetic, so we cast to a single byte type
   // to express equivalent logic...
   return (arc_header_t *)((char *) data - __ARC_HEADER_SIZE_WITH_PAD);
@@ -116,7 +118,7 @@ void *arc_new(size_t nbytes) {
 }
 
 void arc_free(void *arc_data, void(*destructor)(void *)) {
-  arc_header_t *header = get_header(arc_data);
+  arc_header_t *header = __get_header(arc_data);
   // could use acqrel, but only the last decrement needs acquire, and others 
   // only need release (thank you mara bos)
   size_t prev = atomic_fetch_sub_explicit(&header->strong_count, 1, memory_order_release);
@@ -143,10 +145,8 @@ void arc_free(void *arc_data, void(*destructor)(void *)) {
   }
 }
 
-const size_t __ARC_WEAK_MAX_REFS = SIZE_MAX>>1;
-
 void *arc_clone(void *arc_data) {
-  arc_header_t *header = get_header(arc_data);
+  arc_header_t *header = __get_header(arc_data);
   size_t prev = atomic_fetch_add_explicit(&header->strong_count, 1, memory_order_relaxed);
   if (prev > __ARC_WEAK_MAX_REFS-1) {
     errno = ETOOMANYREFS;
@@ -156,7 +156,7 @@ void *arc_clone(void *arc_data) {
 }
 
 void *arc_downgrade(void *arc_data) {
-  arc_header_t *header = get_header(arc_data);
+  arc_header_t *header = __get_header(arc_data);
   // must CAS this, since weak_count could change to 0 after we take our 
   // snapshot, so we cannot just use a fetch_add here, we could get a race
   // when the last weak pointer is dropped...
@@ -179,7 +179,7 @@ void *arc_downgrade(void *arc_data) {
 }
 
 void weak_free(void *weak_data) {
-  arc_header_t *header = get_header(weak_data);
+  arc_header_t *header = __get_header(weak_data);
   // this part is cool; the weak manages the allocation, so we need to see
   // if there is a single weak survivor left (very likely the last arc_t)...
   // we make this operation on other threads visible through release...
@@ -197,7 +197,7 @@ void weak_free(void *weak_data) {
 }
 
 void *weak_clone(void *weak_data) {
-  arc_header_t *header = get_header(weak_data);
+  arc_header_t *header = __get_header(weak_data);
   size_t prev = atomic_fetch_add_explicit(&header->weak_count, 1, memory_order_relaxed);
   if (prev > __ARC_WEAK_MAX_REFS-1) {
     errno = ETOOMANYREFS;
@@ -207,7 +207,7 @@ void *weak_clone(void *weak_data) {
 }
 
 void *weak_upgrade(void *weak_data) {
-  arc_header_t *header = get_header(weak_data);
+  arc_header_t *header = __get_header(weak_data);
   // we must CAS in case strong_count changes... 
   size_t snapshot = atomic_load_explicit(&header->strong_count, memory_order_relaxed);
   for (;;) {
