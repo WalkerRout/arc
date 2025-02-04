@@ -1,2 +1,5 @@
 # arc
-Atomic reference counting in C
+
+Provides strong, owning atomically reference counted fat pointers and cycle-breaking weak pointers.
+- Strong pointers can be downgraded into weak pointers...
+- Weak pointers can be upgraded into strong pointers, but only if other strong pointers are still alive...
