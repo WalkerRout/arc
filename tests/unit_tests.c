@@ -95,10 +95,17 @@ void test_arc() {
   validate_reference_counts(__get_header(shared_arc), 1, 2);
   validate_reference_counts(__get_header(shared_weak), 1, 2);
 
-  weak_free(shared_weak);
-  validate_reference_counts(__get_header(shared_arc), 1, 1);
-
   arc_free(shared_arc, NULL);
+
+  validate_reference_counts(__get_header(shared_arc), 0, 1);
+
+  // try to make a bunch of arcs
+  for (size_t i = 0; i < 50; ++i) {
+    int *failed_upgrade = weak_upgrade(shared_weak);
+    ALWAYS_ASSERT(failed_upgrade == NULL);
+  }
+
+  weak_free(shared_weak);
 }
 
 int main(int argc, char *argv[]) {

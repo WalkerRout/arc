@@ -162,6 +162,12 @@ void *arc_downgrade(void *arc_data) {
   // when the last weak pointer is dropped...
   size_t snapshot = atomic_load_explicit(&header->weak_count, memory_order_relaxed);
   for (;;) {
+    // we dont care about current snapshot, so long as we dont overflow...
+    if (snapshot > __ARC_WEAK_MAX_REFS-1) {
+      // catch overflow, same as clone...
+      errno = ETOOMANYREFS;
+      return NULL;
+    }
     // are we able to increment by 1?
     if (atomic_compare_exchange_weak_explicit(
       &header->weak_count,
