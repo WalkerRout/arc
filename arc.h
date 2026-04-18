@@ -34,17 +34,6 @@
 /// weak the strong pointers held... if there are outstanding weaks, they will
 /// preserve the allocation until the last weak is dropped, where the allocated
 /// memory will finally be free'd (as it sees weak count == 0)...
-///
-/// Personally, i dont really like this code since i think its safety is hard to
-/// reason about when you have a lot of reference counted objects, but hey its C
-/// so i guess the shoe fits...
-///
-/// But really this does irk me, why would we delegate so much mental overhead
-/// to our api consumer for such a commonly used structure/application, moreso how
-/// could we avoid it? could we check for a canary value in the header? what if
-/// we read uninitialized memory? can we do some pointer laundering to check the
-/// data unsafely? i feel like anything that necessitates hungarian notation is
-/// by nature concerning...
 
 #ifdef __cplusplus
 extern "C" {
